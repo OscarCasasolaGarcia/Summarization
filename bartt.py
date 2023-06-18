@@ -11,6 +11,12 @@ def main_bart():
     _max_length = 128
     _early_stopping = True
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    st.header("Resumidor Automático de Textos utilizando BART")
+    src_text = st.text_area("Ingresa el texto a resumir","Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor.")
+
+    st.subheader("Calibración de los parámetros")
     col1, col2, col3 = st.columns(3)
     _num_beams = col1.number_input("num_beams", value=_num_beams)
     _no_repeat_ngram_size = col2.number_input("no_repeat_ngram_size", value=_no_repeat_ngram_size)
@@ -19,16 +25,12 @@ def main_bart():
     col1, col2, col3 = st.columns(3)
     _min_length = col1.number_input("min_length", value=_min_length)
     _max_length = col2.number_input("max_length", value=_max_length)
-    _early_stopping = col3.number_input("early_stopping", value=_early_stopping)
+    _early_stopping = col3.checkbox("early_stopping", value=_early_stopping)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    st.subheader("Summarize with BART")
-    src_text = st.text_area("Enter Text Here","Type Here")
-
-    if st.button("Summarize"):
-        bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-base")
-        bart_tokenizer = BartTokenizer.from_pretrained("facebook/bart-base")
+    if st.button("Resumir Texto..."):
+        bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn")
+        bart_tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
         input_text = str(src_text)
         input_text = ' '.join(input_text.split())
         input_tokenized = bart_tokenizer.encode(input_text, return_tensors='pt').to(device)
@@ -43,10 +45,80 @@ def main_bart():
         output = [bart_tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in
                     summary_ids]
 
-        st.write("Original Text\n")
+        st.subheader("Texto original")
+        st.info("Hay {} caracteres en total".format(len(src_text)))
         st.warning(src_text)
-        st.write("Total Length:",len(src_text))
-
-        st.write('\n\nSummarized Text\n')
+        st.subheader("Texto Resumido")
+        st.info("Hay {} caracteres en total".format(len(output[0])))
         st.success(output[0])
-        st.write("Total Length:",len(output[0]))
+        import pyperclip
+        st.button("Copiar al portapapeles", pyperclip.copy(output[0]))
+
+        # Mostramos una gráfica mostrando el porcentaje de palabras que se redujo
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = round((1-(len(output[0])/len(src_text)))*100,4),
+            title = {'text': "El texto se redujo en un {0}%".format(round((1-(len(output[0])/len(src_text)))*100,2)) + " de su tamaño original"},
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            gauge = {'axis': {'range': [None, 100]},
+                    'steps' : [
+                        {'range': [0, 25], 'color': "lightgray"},
+                        {'range': [25, 50], 'color': "gray"},
+                        {'range': [50, 75], 'color': "lightgray"},
+                        {'range': [75, 100], 'color': "gray"}]}))
+        st.plotly_chart(fig)
+
+
+
+
+        # ############## EVALUATION METRICS
+        # import evaluate
+        # # Load the ROUGE evaluation metric
+        # rouge = evaluate.load('rouge')
+
+        # # Define the candidate predictions and reference sentences
+        # predictions = [output[0]]
+        # st.subheader("Evaluación de resultados")
+        # references = ["Almost two years ago, Tinder decided to move its platform to Kubernetes. Kubernetes afforded us an opportunity to drive Tinder Engineering toward containerization and low-touch operation through immutable deployment. Application build, deployment, and infrastructure would be defined as code. We solved interesting challenges to migrate 200 services and run a Kubernetes cluster at scale totaling 1,000 nodes, 15,000 pods, and 48,000 running containers."]
+        
+        
+        # # Compute the ROUGE score
+        # st.subheader("Utilizando la métrica ROUGE")
+        # results = rouge.compute(predictions=predictions, references=references)
+        # ######## GRAFICAR LOS RESULTADOS
+
+        # import pandas as pd
+        # import numpy as np
+        # results_array = np.array(list(results.items()))
+        # df = pd.DataFrame({'Metrica': results_array[:,0], 'Score': results_array[:,1]})
+        # st.data_editor(
+        #     df,
+        #     column_config={
+        #         "Metrica": {
+        #             "editable": False,
+        #         },
+        #         "Score": st.column_config.ProgressColumn(
+        #             "Score",
+        #             # help="This is a help text",
+        #             format="",
+        #         ),
+        #     },
+        #     use_container_width=True,
+        #     # hide_index=True,
+        # )
+
+        # st.subheader("Utilizando la métrica BLEU")
+        # # Define the candidate predictions and reference sentences
+        # predictions = [output[0]]
+        # references = [[references]]
+
+        # # Load the BLEU evaluation metric
+        # bleu = evaluate.load("bleu")
+
+        # # Compute the BLEU score
+        # results = bleu.compute(predictions=predictions, references=references)
+
+        # ######## Mostramos los resultados en una tabla
+        # df = pd.DataFrame({'Metrica': results.keys(), 'Score': results.values()})
+        # st.table(df)

@@ -26,17 +26,21 @@ def main_spacy():
     from spacy.lang.en.stop_words import STOP_WORDS
     from string import punctuation
 
-    st.subheader("Summarize with NLP")
-    raw_text = st.text_area("Enter Text Here","Type Here")
+    st.subheader("Resumidor automático de textos utilizando spaCy")
+    raw_text = st.text_area("Enter Text Here","Almost two years ago, Tinder decided to move its platform to Kubernetes. Kubernetes afforded us an opportunity to drive Tinder Engineering toward containerization and low-touch operation through immutable deployment. Application build, deployment, and infrastructure would be defined as code. We were also looking to address challenges of scale and stability. When scaling became critical, we often suffered through several minutes of waiting for new EC2 instances to come online. The idea of containers scheduling and serving traffic within seconds as opposed to minutes was appealing to us. It wasn’t easy. During our migration in early 2019, we reached critical mass within our Kubernetes cluster and began encountering various challenges due to traffic volume, cluster size, and DNS. We solved interesting challenges to migrate 200 services and run a Kubernetes cluster at scale totaling 1,000 nodes, 15,000 pods, and 48,000 running containers. ")
+    
+    number = st.number_input("Ingresa el número de sentencias que quieres en el resumen...",min_value=1)
 
-    if st.button("Summarize"):
+    with st.expander("Summarize"):
         stopwords = list(STOP_WORDS)
         # nlp = spacy.load("en_core_web_sm")
         doc = nlp(raw_text)
 
         # Word tokenization
         tokens = [token.text for token in doc]
-        st.info("Hay {} tokens".format(len(tokens)))
+        
+        st.subheader("Tokens")
+        
         # Convertimos tokens a un dataframe
         import pandas as pd
         pd.set_option('display.max_colwidth', 200)
@@ -56,10 +60,8 @@ def main_spacy():
                         word_frequencies[word.text] += 1
         
         import numpy as np
-        # En un dataframe, se crea una columna con las palabras y otra con la frecuencia, se ordena de mayor a menor, y se grafica con st.bar_chart
-        # Crear el DataFrame
+        st.subheader("Frecuencia de palabras")
         chart_data = pd.DataFrame(word_frequencies.items(), columns=['Palabra', 'Frecuencia'])
-
         st.data_editor(
             chart_data,
             column_config={
@@ -156,12 +158,84 @@ def main_spacy():
 
         ############# Summarization
         from heapq import nlargest
-        select_length = int(len(sentence_tokens)*0.3)
+        # select_length = int(len(sentence_tokens)*0.3)
 
-        summary = nlargest(select_length, sentence_scores, key = sentence_scores.get)
+        summary = nlargest(number, sentence_scores, key = sentence_scores.get)
 
         final_summary = [word.text for word in summary]
         summary = " ".join(final_summary)
 
+        st.subheader("Texto original")
+        st.info("Hay {} caracteres en total".format(len(raw_text)))
         st.warning(raw_text)
+        st.subheader("Texto Resumido")
+        st.info("Hay {} caracteres en total".format(len(summary)))
         st.success(summary)
+        import pyperclip
+        st.button("Copiar al portapapeles", pyperclip.copy(summary))
+
+        # Mostramos una gráfica mostrando el porcentaje de palabras que se redujo
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = round((1-(len(summary)/len(raw_text)))*100,4),
+            title = {'text': "El texto se redujo en un {0}%".format(round((1-(len(summary)/len(raw_text)))*100,2)) + " de su tamaño original"},
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            gauge = {'axis': {'range': [None, 100]},
+                    'steps' : [
+                        {'range': [0, 25], 'color': "lightgray"},
+                        {'range': [25, 50], 'color': "gray"},
+                        {'range': [50, 75], 'color': "lightgray"},
+                        {'range': [75, 100], 'color': "gray"}]}))
+        st.plotly_chart(fig)
+
+
+        ############## EVALUATION METRICS
+        import evaluate
+        # Load the ROUGE evaluation metric
+        rouge = evaluate.load('rouge')
+
+        # Define the candidate predictions and reference sentences
+        predictions = [summary]
+        st.subheader("Evaluación de resultados")
+        references1 = st.text_area("Ingresa el resumen hecho por ti","...")
+
+        references = [references1]
+        
+        
+        # Compute the ROUGE score
+        st.subheader("Utilizando la métrica ROUGE")
+        results = rouge.compute(predictions=predictions, references=references)
+        ######## GRAFICAR LOS RESULTADOS
+        results_array = np.array(list(results.items()))
+        df = pd.DataFrame({'Metrica': results_array[:,0], 'Score': results_array[:,1]})
+        st.data_editor(
+            df,
+            column_config={
+                "Metrica": {
+                    "editable": False,
+                },
+                "Score": st.column_config.ProgressColumn(
+                    "Score",
+                    # help="This is a help text",
+                    format="",
+                ),
+            },
+            use_container_width=True,
+            # hide_index=True,
+        )
+
+        st.subheader("Utilizando la métrica BLEU")
+        # Define the candidate predictions and reference sentences
+        predictions = [summary]
+        references = [[references1]]
+
+        # Load the BLEU evaluation metric
+        bleu = evaluate.load("bleu")
+
+        # Compute the BLEU score
+        results = bleu.compute(predictions=predictions, references=references)
+
+        ######## Mostramos los resultados en una tabla
+        df = pd.DataFrame({'Metrica': results.keys(), 'Score': results.values()})
+        st.table(df)
